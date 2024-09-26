@@ -6,10 +6,10 @@ tool_names = ["search"]
 provider = "r2r"
 access_token_lifetime_in_minutes = 60
 refresh_token_lifetime_in_days = 7
-require_authentication = false
-require_email_verification = false
-default_admin_email = "admin@example.com"
-default_admin_password = "change_me_immediately"
+require_authentication = true
+require_email_verification = true
+default_admin_email = "admin@rowland.ai"
+default_admin_password = "Sk7!PhnVrUC2zQgAvqeDBN"
 
 [chunking]
 provider = "unstructured_local"
