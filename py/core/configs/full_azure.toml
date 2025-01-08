@@ -1,5 +1,8 @@
 # A config which overrides all instances of `openai` with `azure` in the `r2r.toml` config
 [completion]
+provider = "litellm"
+concurrent_request_limit = 128
+
   [completion.generation_config]
   model = "azure/gpt-4o"
 
@@ -7,24 +10,21 @@
   [agent.generation_config]
   model = "azure/gpt-4o"
 
-# KG settings
-batch_size = 256
-
-  [database.kg_creation_settings]
+[database]
+  [database.graph_creation_settings]
+    clustering_mode = "remote"
     generation_config = { model = "azure/gpt-4o-mini" }
 
-  [database.kg_entity_deduplication_settings]
+  [database.graph_enrichment_settings]
     generation_config = { model = "azure/gpt-4o-mini" }
 
-  [database.kg_enrichment_settings]
-    generation_config = { model = "azure/gpt-4o-mini" }
-
-  [database.kg_search_settings]
+  [database.graph_search_settings]
     generation_config = { model = "azure/gpt-4o-mini" }
 
 [embedding]
 provider = "litellm"
-base_model = "openai/text-embedding-3-small" # continue with `openai` for embeddings, due to server rate limit on azure
+base_model = "azure/text-embedding-3-small"
+base_dimension = 512
 
 [file]
 provider = "postgres"
@@ -33,10 +33,14 @@ provider = "postgres"
 provider = "unstructured_local"
 strategy = "auto"
 chunking_strategy = "by_title"
-new_after_n_chars = 512
-max_characters = 1_024
-combine_under_n_chars = 128
-overlap = 256
+new_after_n_chars = 2_048
+max_characters = 4_096
+combine_under_n_chars = 1_024
+overlap = 1_024
+document_summary_model = "azure/gpt-4o-mini"
+vision_img_model = "azure/gpt-4o"
+vision_pdf_model = "azure/gpt-4o"
+
   [ingestion.extra_parsers]
     pdf = "zerox"
 
@@ -45,6 +49,6 @@ overlap = 256
 
 [orchestration]
 provider = "hatchet"
-kg_creation_concurrency_lipmit = 32
-ingestion_concurrency_limit = 128
-kg_enrichment_concurrency_limit = 8
+kg_creation_concurrency_limit = 32
+ingestion_concurrency_limit = 4
+kg_concurrency_limit = 8

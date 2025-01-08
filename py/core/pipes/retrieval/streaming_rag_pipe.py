@@ -1,6 +1,5 @@
 import logging
-from datetime import datetime
-from typing import Any, AsyncGenerator, Generator, Optional
+from typing import Any, AsyncGenerator, Generator
 from uuid import UUID
 
 from core.base import (
@@ -18,12 +17,10 @@ from ..abstractions.generator_pipe import GeneratorPipe
 logger = logging.getLogger()
 
 
-class StreamingSearchRAGPipe(GeneratorPipe):
-    VECTOR_SEARCH_STREAM_MARKER = (
+class StreamingRAGPipe(GeneratorPipe):
+    CHUNK_SEARCH_STREAM_MARKER = (
         "search"  # TODO - change this to vector_search in next major release
     )
-    KG_LOCAL_SEARCH_STREAM_MARKER = "kg_local_search"
-    KG_GLOBAL_SEARCH_STREAM_MARKER = "kg_global_search"
     COMPLETION_STREAM_MARKER = "completion"
 
     def __init__(
@@ -64,7 +61,7 @@ class StreamingSearchRAGPipe(GeneratorPipe):
             context += gen_context
 
         messages = (
-            await self.database_provider.prompt_handler.get_message_payload(
+            await self.database_provider.prompts_handler.get_message_payload(
                 system_prompt_name=self.config.system_prompt,
                 task_prompt_name=self.config.task_prompt,
                 task_inputs={"query": query, "context": context},
@@ -75,7 +72,7 @@ class StreamingSearchRAGPipe(GeneratorPipe):
         for chunk in self.llm_provider.get_completion_stream(
             messages=messages, generation_config=rag_generation_config
         ):
-            chunk_txt = StreamingSearchRAGPipe._process_chunk(chunk)
+            chunk_txt = StreamingRAGPipe._process_chunk(chunk)
             response += chunk_txt
             yield chunk_txt
 

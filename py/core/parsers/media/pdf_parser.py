@@ -4,25 +4,29 @@ import base64
 import logging
 import os
 import string
+import tempfile
 import unicodedata
+import uuid
 from io import BytesIO
 from typing import AsyncGenerator
 
 import aiofiles
 from pdf2image import convert_from_path
+from pdf2image.exceptions import PDFInfoNotInstalledError
 
-from core.base.abstractions import DataType, GenerationConfig
+from core.base.abstractions import GenerationConfig
 from core.base.parsers.base_parser import AsyncParser
 from core.base.providers import (
     CompletionProvider,
     DatabaseProvider,
     IngestionConfig,
 )
+from shared.abstractions import PDFParsingError, PopperNotFoundError
 
 logger = logging.getLogger()
 
 
-class VLMPDFParser(AsyncParser[DataType]):
+class VLMPDFParser(AsyncParser[str | bytes]):
     """A parser for PDF documents using vision models for page processing."""
 
     def __init__(
@@ -46,6 +50,15 @@ class VLMPDFParser(AsyncParser[DataType]):
                 "Please install the `litellm` package to use the VLMPDFParser."
             )
 
+    def _create_temp_dir(self) -> str:
+        """Create a unique temporary directory for PDF processing."""
+        # Create a unique directory name using UUID
+        unique_id = str(uuid.uuid4())
+        temp_base = tempfile.gettempdir()
+        temp_dir = os.path.join(temp_base, f"pdf_images_{unique_id}")
+        os.makedirs(temp_dir, exist_ok=True)
+        return temp_dir
+
     async def convert_pdf_to_images(
         self, pdf_path: str, temp_dir: str
     ) -> list[str]:
@@ -59,11 +72,14 @@ class VLMPDFParser(AsyncParser[DataType]):
             "paths_only": True,
         }
         try:
-            image_paths = await asyncio.to_thread(convert_from_path, **options)
-            return image_paths
+            return await asyncio.to_thread(convert_from_path, **options)
+        except PDFInfoNotInstalledError:
+            raise PopperNotFoundError()
         except Exception as err:
-            logger.error(f"Error converting PDF to images: {err}")
-            raise
+            logger.error(
+                f"Error converting PDF to images: {err} type: {type(err)}"
+            )
+            raise PDFParsingError(f"Failed to process PDF: {str(err)}", err)
 
     async def process_page(
         self, image_path: str, page_num: int
@@ -124,7 +140,7 @@ class VLMPDFParser(AsyncParser[DataType]):
             raise
 
     async def ingest(
-        self, data: DataType, maintain_order: bool = False, **kwargs
+        self, data: str | bytes, maintain_order: bool = False, **kwargs
     ) -> AsyncGenerator[dict[str, str], None]:
         """
         Ingest PDF data and yield descriptions for each page using vision model.
@@ -138,15 +154,16 @@ class VLMPDFParser(AsyncParser[DataType]):
             Dict containing page number and content for each processed page
         """
         if not self.vision_prompt_text:
-            self.vision_prompt_text = await self.database_provider.get_prompt(  # type: ignore
+            self.vision_prompt_text = await self.database_provider.prompts_handler.get_cached_prompt(  # type: ignore
                 prompt_name=self.config.vision_pdf_prompt_name
             )
 
         temp_dir = None
         try:
             # Create temporary directory for image processing
-            temp_dir = os.path.join(os.getcwd(), "temp_pdf_images")
-            os.makedirs(temp_dir, exist_ok=True)
+            # temp_dir = os.path.join(os.getcwd(), "temp_pdf_images")
+            # os.makedirs(temp_dir, exist_ok=True)
+            temp_dir = self._create_temp_dir()
 
             # Handle both file path and bytes input
             if isinstance(data, bytes):
@@ -206,7 +223,7 @@ class VLMPDFParser(AsyncParser[DataType]):
                 os.rmdir(temp_dir)
 
 
-class BasicPDFParser(AsyncParser[DataType]):
+class BasicPDFParser(AsyncParser[str | bytes]):
     """A parser for PDF data."""
 
     def __init__(
@@ -228,7 +245,7 @@ class BasicPDFParser(AsyncParser[DataType]):
             )
 
     async def ingest(
-        self, data: DataType, **kwargs
+        self, data: str | bytes, **kwargs
     ) -> AsyncGenerator[str, None]:
         """Ingest PDF data and yield text from each page."""
         if isinstance(data, str):
@@ -265,7 +282,7 @@ class BasicPDFParser(AsyncParser[DataType]):
                 yield page_text
 
 
-class PDFParserUnstructured(AsyncParser[DataType]):
+class PDFParserUnstructured(AsyncParser[str | bytes]):
     def __init__(
         self,
         config: IngestionConfig,
@@ -291,7 +308,7 @@ class PDFParserUnstructured(AsyncParser[DataType]):
 
     async def ingest(
         self,
-        data: DataType,
+        data: str | bytes,
         partition_strategy: str = "hi_res",
         chunking_strategy="by_title",
     ) -> AsyncGenerator[str, None]:

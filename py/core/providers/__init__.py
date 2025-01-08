@@ -1,6 +1,10 @@
 from .auth import R2RAuthProvider, SupabaseAuthProvider
-from .crypto import BCryptConfig, BCryptProvider
-from .database import PostgresDBProvider
+from .crypto import (
+    BcryptCryptoConfig,
+    BCryptCryptoProvider,
+    NaClCryptoConfig,
+    NaClCryptoProvider,
+)
 from .email import (
     AsyncSMTPEmailProvider,
     ConsoleMockEmailProvider,
@@ -18,7 +22,6 @@ from .ingestion import (  # type: ignore
     UnstructuredIngestionProvider,
 )
 from .llm import LiteLLMCompletionProvider, OpenAICompletionProvider
-from .logger import SqlitePersistentLoggingProvider
 from .orchestration import (
     HatchetOrchestrationProvider,
     SimpleOrchestrationProvider,
@@ -34,10 +37,10 @@ __all__ = [
     "UnstructuredIngestionProvider",
     "UnstructuredIngestionConfig",
     # Crypto
-    "BCryptProvider",
-    "BCryptConfig",
-    # Database
-    "PostgresDBProvider",
+    "BCryptCryptoProvider",
+    "BcryptCryptoConfig",
+    "NaClCryptoConfig",
+    "NaClCryptoProvider",
     # Embeddings
     "LiteLLMEmbeddingProvider",
     "OllamaEmbeddingProvider",
@@ -52,6 +55,4 @@ __all__ = [
     # LLM
     "OpenAICompletionProvider",
     "LiteLLMCompletionProvider",
-    # Logging
-    "SqlitePersistentLoggingProvider",
 ]

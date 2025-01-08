@@ -6,7 +6,7 @@ import os
 import time
 from copy import copy
 from io import BytesIO
-from typing import Any, AsyncGenerator, Optional, Union
+from typing import Any, AsyncGenerator, Optional
 
 import httpx
 from unstructured_client import UnstructuredClient
@@ -17,7 +17,7 @@ from core.base import (
     AsyncParser,
     ChunkingStrategy,
     Document,
-    DocumentExtraction,
+    DocumentChunk,
     DocumentType,
     RecursiveCharacterTextSplitter,
 )
@@ -25,7 +25,7 @@ from core.base.abstractions import R2RSerializable
 from core.base.providers.ingestion import IngestionConfig, IngestionProvider
 from core.utils import generate_extraction_id
 
-from ...database import PostgresDBProvider
+from ....database.postgres import PostgresDatabaseProvider
 from ...llm import LiteLLMCompletionProvider, OpenAICompletionProvider
 
 logger = logging.getLogger()
@@ -63,7 +63,7 @@ class UnstructuredIngestionConfig(IngestionConfig):
     split_pdf_page: Optional[bool] = None
     starting_page_number: Optional[int] = None
     strategy: Optional[str] = None
-    chunking_strategy: Optional[ChunkingStrategy] = None
+    chunking_strategy: Optional[str | ChunkingStrategy] = None
     unique_element_ids: Optional[bool] = None
     xml_keep_tags: Optional[bool] = None
 
@@ -81,28 +81,33 @@ class UnstructuredIngestionConfig(IngestionConfig):
 
 class UnstructuredIngestionProvider(IngestionProvider):
     R2R_FALLBACK_PARSERS = {
-        DocumentType.GIF: [parsers.ImageParser],
-        DocumentType.JPEG: [parsers.ImageParser],
-        DocumentType.JPG: [parsers.ImageParser],
-        DocumentType.PNG: [parsers.ImageParser],
-        DocumentType.SVG: [parsers.ImageParser],
-        DocumentType.MP3: [parsers.AudioParser],
+        DocumentType.GIF: [parsers.ImageParser],  # type: ignore
+        DocumentType.JPEG: [parsers.ImageParser],  # type: ignore
+        DocumentType.JPG: [parsers.ImageParser],  # type: ignore
+        DocumentType.PNG: [parsers.ImageParser],  # type: ignore
+        DocumentType.SVG: [parsers.ImageParser],  # type: ignore
+        DocumentType.HEIC: [parsers.ImageParser],  # type: ignore
+        DocumentType.MP3: [parsers.AudioParser],  # type: ignore
         DocumentType.JSON: [parsers.JSONParser],  # type: ignore
         DocumentType.HTML: [parsers.HTMLParser],  # type: ignore
+        DocumentType.XLS: [parsers.XLSParser],  # type: ignore
         DocumentType.XLSX: [parsers.XLSXParser],  # type: ignore
+        DocumentType.DOC: [parsers.DOCParser],  # type: ignore
+        DocumentType.PPT: [parsers.PPTParser],  # type: ignore
     }
 
     EXTRA_PARSERS = {
         DocumentType.CSV: {"advanced": parsers.CSVParserAdvanced},  # type: ignore
         DocumentType.PDF: {
-            "unstructured": parsers.PDFParserUnstructured,
-            "zerox": parsers.VLMPDFParser,
+            "unstructured": parsers.PDFParserUnstructured,  # type: ignore
+            "zerox": parsers.VLMPDFParser,  # type: ignore
         },
         DocumentType.XLSX: {"advanced": parsers.XLSXParserAdvanced},  # type: ignore
     }
 
     IMAGE_TYPES = {
         DocumentType.GIF,
+        DocumentType.HEIC,
         DocumentType.JPG,
         DocumentType.JPEG,
         DocumentType.PNG,
@@ -112,17 +117,15 @@ class UnstructuredIngestionProvider(IngestionProvider):
     def __init__(
         self,
         config: UnstructuredIngestionConfig,
-        database_provider: PostgresDBProvider,
-        llm_provider: Union[
-            LiteLLMCompletionProvider, OpenAICompletionProvider
-        ],
+        database_provider: PostgresDatabaseProvider,
+        llm_provider: LiteLLMCompletionProvider | OpenAICompletionProvider,
     ):
         super().__init__(config, database_provider, llm_provider)
         self.config: UnstructuredIngestionConfig = config
-        self.database_provider: PostgresDBProvider = database_provider
-        self.llm_provider: Union[
-            LiteLLMCompletionProvider, OpenAICompletionProvider
-        ] = llm_provider
+        self.database_provider: PostgresDatabaseProvider = database_provider
+        self.llm_provider: (
+            LiteLLMCompletionProvider | OpenAICompletionProvider
+        ) = llm_provider
 
         if config.provider == "unstructured_api":
             try:
@@ -147,11 +150,11 @@ class UnstructuredIngestionProvider(IngestionProvider):
         else:
             try:
                 self.local_unstructured_url = os.environ[
-                    "UNSTRUCTURED_LOCAL_URL"
+                    "UNSTRUCTURED_SERVICE_URL"
                 ]
             except KeyError as e:
                 raise ValueError(
-                    "UNSTRUCTURED_LOCAL_URL environment variable is not set"
+                    "UNSTRUCTURED_SERVICE_URL environment variable is not set"
                 ) from e
 
             self.client = httpx.AsyncClient()
@@ -216,8 +219,7 @@ class UnstructuredIngestionProvider(IngestionProvider):
         file_content: bytes,
         document: Document,
         ingestion_config_override: dict,
-    ) -> AsyncGenerator[DocumentExtraction, None]:
-
+    ) -> AsyncGenerator[DocumentChunk, None]:
         ingestion_config = copy(
             {
                 **self.config.to_ingestion_request(),
@@ -322,9 +324,7 @@ class UnstructuredIngestionProvider(IngestionProvider):
                 metadata.update(element.metadata)
             else:
                 element_dict = (
-                    element.to_dict()
-                    if not isinstance(element, dict)
-                    else element
+                    element if isinstance(element, dict) else element.to_dict()
                 )
                 text = element_dict.get("text", "")
                 if text == "":
@@ -334,19 +334,18 @@ class UnstructuredIngestionProvider(IngestionProvider):
                 for key, value in element_dict.items():
                     if key == "metadata":
                         for k, v in value.items():
-                            if k not in metadata:
-                                if k != "orig_elements":
-                                    metadata[f"unstructured_{k}"] = v
+                            if k not in metadata and k != "orig_elements":
+                                metadata[f"unstructured_{k}"] = v
 
             # indicate that the document was chunked using unstructured
             # nullifies the need for chunking in the pipeline
             metadata["partitioned_by_unstructured"] = True
             metadata["chunk_order"] = iteration
             # creating the text extraction
-            yield DocumentExtraction(
+            yield DocumentChunk(
                 id=generate_extraction_id(document.id, iteration),
                 document_id=document.id,
-                user_id=document.user_id,
+                owner_id=document.owner_id,
                 collection_ids=document.collection_ids,
                 data=text,
                 metadata=metadata,

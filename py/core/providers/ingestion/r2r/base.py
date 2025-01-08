@@ -1,14 +1,14 @@
 # type: ignore
 import logging
 import time
-from typing import Any, AsyncGenerator, Optional, Union
+from typing import Any, AsyncGenerator, Optional
 
 from core import parsers
 from core.base import (
     AsyncParser,
     ChunkingStrategy,
     Document,
-    DocumentExtraction,
+    DocumentChunk,
     DocumentType,
     IngestionConfig,
     IngestionProvider,
@@ -16,10 +16,10 @@ from core.base import (
     RecursiveCharacterTextSplitter,
     TextSplitter,
 )
-from core.base.abstractions import DocumentExtraction
+from core.base.abstractions import DocumentChunk
 from core.utils import generate_extraction_id
 
-from ...database import PostgresDBProvider
+from ....database.postgres import PostgresDatabaseProvider
 from ...llm import LiteLLMCompletionProvider, OpenAICompletionProvider
 
 logger = logging.getLogger()
@@ -35,22 +35,37 @@ class R2RIngestionConfig(IngestionConfig):
 
 class R2RIngestionProvider(IngestionProvider):
     DEFAULT_PARSERS = {
+        DocumentType.BMP: parsers.BMPParser,
         DocumentType.CSV: parsers.CSVParser,
+        DocumentType.DOC: parsers.DOCParser,
         DocumentType.DOCX: parsers.DOCXParser,
+        DocumentType.EML: parsers.EMLParser,
+        DocumentType.EPUB: parsers.EPUBParser,
         DocumentType.HTML: parsers.HTMLParser,
         DocumentType.HTM: parsers.HTMLParser,
+        DocumentType.ODT: parsers.ODTParser,
         DocumentType.JSON: parsers.JSONParser,
+        DocumentType.MSG: parsers.MSGParser,
+        DocumentType.ORG: parsers.ORGParser,
         DocumentType.MD: parsers.MDParser,
         DocumentType.PDF: parsers.BasicPDFParser,
-        DocumentType.PPTX: parsers.PPTParser,
+        DocumentType.PPT: parsers.PPTParser,
+        DocumentType.PPTX: parsers.PPTXParser,
         DocumentType.TXT: parsers.TextParser,
         DocumentType.XLSX: parsers.XLSXParser,
         DocumentType.GIF: parsers.ImageParser,
         DocumentType.JPEG: parsers.ImageParser,
         DocumentType.JPG: parsers.ImageParser,
+        DocumentType.TSV: parsers.TSVParser,
         DocumentType.PNG: parsers.ImageParser,
+        DocumentType.HEIC: parsers.ImageParser,
         DocumentType.SVG: parsers.ImageParser,
         DocumentType.MP3: parsers.AudioParser,
+        DocumentType.P7S: parsers.P7SParser,
+        DocumentType.RST: parsers.RSTParser,
+        DocumentType.RTF: parsers.RTFParser,
+        DocumentType.TIFF: parsers.TIFFParser,
+        DocumentType.XLS: parsers.XLSParser,
     }
 
     EXTRA_PARSERS = {
@@ -64,6 +79,7 @@ class R2RIngestionProvider(IngestionProvider):
 
     IMAGE_TYPES = {
         DocumentType.GIF,
+        DocumentType.HEIC,
         DocumentType.JPG,
         DocumentType.JPEG,
         DocumentType.PNG,
@@ -73,17 +89,15 @@ class R2RIngestionProvider(IngestionProvider):
     def __init__(
         self,
         config: R2RIngestionConfig,
-        database_provider: PostgresDBProvider,
-        llm_provider: Union[
-            LiteLLMCompletionProvider, OpenAICompletionProvider
-        ],
+        database_provider: PostgresDatabaseProvider,
+        llm_provider: LiteLLMCompletionProvider | OpenAICompletionProvider,
     ):
         super().__init__(config, database_provider, llm_provider)
         self.config: R2RIngestionConfig = config  # for type hinting
-        self.database_provider: PostgresDBProvider = database_provider
-        self.llm_provider: Union[
-            LiteLLMCompletionProvider, OpenAICompletionProvider
-        ] = llm_provider
+        self.database_provider: PostgresDatabaseProvider = database_provider
+        self.llm_provider: (
+            LiteLLMCompletionProvider | OpenAICompletionProvider
+        ) = llm_provider
         self.parsers: dict[DocumentType, AsyncParser] = {}
         self.text_splitter = self._build_text_splitter()
         self._initialize_parsers()
@@ -169,16 +183,15 @@ class R2RIngestionProvider(IngestionProvider):
 
     def chunk(
         self,
-        parsed_document: Union[str, DocumentExtraction],
+        parsed_document: str | DocumentChunk,
         ingestion_config_override: dict,
     ) -> AsyncGenerator[Any, None]:
-
         text_spliiter = self.text_splitter
         if ingestion_config_override:
             text_spliiter = self._build_text_splitter(
                 ingestion_config_override
             )
-        if isinstance(parsed_document, DocumentExtraction):
+        if isinstance(parsed_document, DocumentChunk):
             parsed_document = parsed_document.data
 
         if isinstance(parsed_document, str):
@@ -197,11 +210,9 @@ class R2RIngestionProvider(IngestionProvider):
         file_content: bytes,
         document: Document,
         ingestion_config_override: dict,
-    ) -> AsyncGenerator[
-        Union[DocumentExtraction, R2RDocumentProcessingError], None
-    ]:
+    ) -> AsyncGenerator[DocumentChunk, None]:
         if document.document_type not in self.parsers:
-            yield R2RDocumentProcessingError(
+            raise R2RDocumentProcessingError(
                 document_id=document.id,
                 error_message=f"Parser for {document.document_type} not found in `R2RIngestionProvider`.",
             )
@@ -236,10 +247,10 @@ class R2RIngestionProvider(IngestionProvider):
             iteration = 0
             chunks = self.chunk(contents, ingestion_config_override)
             for chunk in chunks:
-                extraction = DocumentExtraction(
+                extraction = DocumentChunk(
                     id=generate_extraction_id(document.id, iteration),
                     document_id=document.id,
-                    user_id=document.user_id,
+                    owner_id=document.owner_id,
                     collection_ids=document.collection_ids,
                     data=chunk,
                     metadata={**document.metadata, "chunk_order": iteration},

@@ -1,30 +1,28 @@
 from .base import AsyncSyncMeta, R2RSerializable, syncable
 from .document import (
-    DataType,
     Document,
-    DocumentExtraction,
-    DocumentInfo,
+    DocumentChunk,
+    DocumentResponse,
     DocumentType,
+    IngestionMode,
     IngestionStatus,
     KGEnrichmentStatus,
     KGExtractionStatus,
     RawChunk,
+    UnprocessedChunk,
 )
 from .embedding import EmbeddingPurpose, default_embedding_prefixes
-from .exception import R2RDocumentProcessingError, R2RException
-from .graph import (
-    Community,
-    CommunityReport,
-    Entity,
-    EntityType,
-    KGExtraction,
-    RelationshipType,
-    Triple,
+from .exception import (
+    PDFParsingError,
+    PopperNotFoundError,
+    R2RDocumentProcessingError,
+    R2RException,
 )
+from .graph import Community, Entity, KGExtraction, Relationship, StoreType
 from .kg import (
+    GraphCommunitySettings,
     KGCreationSettings,
     KGEnrichmentSettings,
-    KGEntityDeduplicationSettings,
     KGRunType,
 )
 from .llm import (
@@ -38,19 +36,20 @@ from .llm import (
 from .prompt import Prompt
 from .search import (
     AggregateSearchResult,
+    ChunkSearchResult,
+    ChunkSearchSettings,
+    GraphSearchResult,
+    GraphSearchSettings,
     HybridSearchSettings,
     KGCommunityResult,
     KGEntityResult,
-    KGGlobalResult,
     KGRelationshipResult,
-    KGSearchMethod,
-    KGSearchResult,
     KGSearchResultType,
-    KGSearchSettings,
+    SearchMode,
     SearchSettings,
-    VectorSearchResult,
+    select_search_filters,
 )
-from .user import Token, TokenData, UserStats
+from .user import Token, TokenData, User
 from .vector import (
     IndexArgsHNSW,
     IndexArgsIVFFlat,
@@ -72,29 +71,30 @@ __all__ = [
     # Completion abstractions
     "MessageType",
     # Document abstractions
-    "DataType",
     "Document",
-    "DocumentExtraction",
-    "DocumentInfo",
+    "DocumentChunk",
+    "DocumentResponse",
     "IngestionStatus",
     "KGExtractionStatus",
     "KGEnrichmentStatus",
     "DocumentType",
     "RawChunk",
+    "UnprocessedChunk",
     # Embedding abstractions
     "EmbeddingPurpose",
     "default_embedding_prefixes",
     # Exception abstractions
     "R2RDocumentProcessingError",
     "R2RException",
+    "PDFParsingError",
+    "PopperNotFoundError",
     # Graph abstractions
     "Entity",
-    "EntityType",
-    "RelationshipType",
     "Community",
-    "CommunityReport",
+    "Community",
     "KGExtraction",
-    "Triple",
+    "Relationship",
+    "StoreType",
     # LLM abstractions
     "GenerationConfig",
     "LLMChatCompletion",
@@ -105,26 +105,28 @@ __all__ = [
     "Prompt",
     # Search abstractions
     "AggregateSearchResult",
-    "KGSearchResult",
-    "KGSearchMethod",
+    "GraphSearchResult",
     "KGSearchResultType",
     "KGEntityResult",
     "KGRelationshipResult",
     "KGCommunityResult",
-    "KGGlobalResult",
-    "KGSearchSettings",
-    "VectorSearchResult",
+    "GraphSearchSettings",
+    "ChunkSearchSettings",
+    "ChunkSearchResult",
     "SearchSettings",
+    "select_search_filters",
     "HybridSearchSettings",
+    "SearchMode",
     # KG abstractions
     "KGCreationSettings",
     "KGEnrichmentSettings",
     "KGExtraction",
     "KGRunType",
+    "GraphCommunitySettings",
     # User abstractions
     "Token",
     "TokenData",
-    "UserStats",
+    "User",
     # Vector abstractions
     "Vector",
     "VectorEntry",

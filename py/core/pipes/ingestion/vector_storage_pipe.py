@@ -4,7 +4,6 @@ from uuid import UUID
 
 from core.base import AsyncState, DatabaseProvider, StorageResult, VectorEntry
 from core.base.pipes.base_pipe import AsyncPipe
-from core.providers.logger.r2r_logger import SqlitePersistentLoggingProvider
 
 logger = logging.getLogger()
 
@@ -17,7 +16,6 @@ class VectorStoragePipe(AsyncPipe[StorageResult]):
         self,
         database_provider: DatabaseProvider,
         config: AsyncPipe.PipeConfig,
-        logging_provider: SqlitePersistentLoggingProvider,
         storage_batch_size: int = 128,
         *args,
         **kwargs,
@@ -27,7 +25,6 @@ class VectorStoragePipe(AsyncPipe[StorageResult]):
         """
         super().__init__(
             config,
-            logging_provider,
             *args,
             **kwargs,
         )
@@ -43,7 +40,9 @@ class VectorStoragePipe(AsyncPipe[StorageResult]):
         """
 
         try:
-            await self.database_provider.upsert_entries(vector_entries)
+            await self.database_provider.chunks_handler.upsert_entries(
+                vector_entries
+            )
         except Exception as e:
             error_message = (
                 f"Failed to store vector entries in the database: {e}"
@@ -63,10 +62,35 @@ class VectorStoragePipe(AsyncPipe[StorageResult]):
         document_counts: dict[UUID, int] = {}
 
         for msg in input.message:
+            user = await self.database_provider.users_handler.get_user_by_id(
+                msg.owner_id
+            )
+            max_chunks = (
+                self.database_provider.config.app.default_max_chunks_per_user
+            )
+            if user.limits_overrides and "max_chunks" in user.limits_overrides:
+                max_chunks = user.limits_overrides["max_chunks"]
+
             vector_batch.append(msg)
             document_counts[msg.document_id] = (
                 document_counts.get(msg.document_id, 0) + 1
             )
+
+            current_usage = (
+                await self.database_provider.chunks_handler.list_chunks(
+                    limit=1, offset=0, filters={"owner_id": msg.owner_id}
+                )
+            )["page_info"]["total_entries"]
+
+            if current_usage + len(vector_batch) > max_chunks:
+                error_message = f"User has exceeded the maximum number of allowed chunks: {max_chunks}"
+                logger.error(error_message)
+                yield StorageResult(
+                    document_id=msg.document_id,
+                    success=False,
+                    error_message=error_message,
+                )
+                continue
 
             if len(vector_batch) >= self.storage_batch_size:
                 try:

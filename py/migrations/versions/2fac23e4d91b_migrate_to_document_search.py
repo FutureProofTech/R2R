@@ -150,14 +150,13 @@ async def async_generate_all_summaries():
                     ),
                 }
             ]
-            print("Making completion")
             summary = await client.completion(
                 messages=messages, generation_config={"model": base_model}
             )
             summary_text = summary["results"]["choices"][0]["message"][
                 "content"
             ]
-            embedding_vector = client.embedding(summary_text)["results"][0]
+            embedding_vector = await client.embedding(summary_text)
             # embedding_response = await openai_client.embeddings.create(
             #     model=embedding_model, input=summary_text, dimensions=dimension
             # )
@@ -189,12 +188,19 @@ def generate_all_summaries():
 
 
 def check_if_upgrade_needed():
-    """Check if the upgrade has already been applied by checking for summary column"""
+    """Check if the upgrade has already been applied or is needed"""
     # Get database connection
     connection = op.get_bind()
     inspector = inspect(connection)
 
-    # Check if the columns exist
+    # First check if the document_info table exists
+    if not inspector.has_table("document_info", schema=project_name):
+        print(
+            f"Migration not needed: '{project_name}.document_info' table doesn't exist yet"
+        )
+        return False
+
+    # Then check if the columns exist
     existing_columns = [
         col["name"]
         for col in inspector.get_columns(f"document_info", schema=project_name)
@@ -218,14 +224,16 @@ def upgrade() -> None:
     if check_if_upgrade_needed():
         # Load the document summaries
         generate_all_summaries()
+        document_summaries = None
         try:
             with open("document_summaries.json", "r") as f:
                 document_summaries = json.load(f)
             print(f"Loaded {len(document_summaries)} document summaries")
         except FileNotFoundError:
-            raise ValueError(
-                "document_summaries.json not found. Please run the summary generation script first."
+            print(
+                "document_summaries.json not found. Continuing without summaries and/or summary embeddings."
             )
+            pass
         except json.JSONDecodeError:
             raise ValueError("Invalid document_summaries.json file")
 
@@ -267,22 +275,27 @@ def upgrade() -> None:
         """
         )
 
-        # Update existing documents with summaries and embeddings
-        for doc_id, doc_data in document_summaries.items():
-            # Convert the embedding array to the PostgreSQL vector format
-            embedding_str = (
-                f"[{','.join(str(x) for x in doc_data['embedding'])}]"
-            )
+        if document_summaries:
+            # Update existing documents with summaries and embeddings
+            for doc_id, doc_data in document_summaries.items():
+                # Convert the embedding array to the PostgreSQL vector format
+                embedding_str = (
+                    f"[{','.join(str(x) for x in doc_data['embedding'])}]"
+                )
 
-            # Use plain SQL with proper escaping for PostgreSQL
-            op.execute(
-                f"""
-                UPDATE {project_name}.document_info
-                SET
-                    summary = '{doc_data['summary'].replace("'", "''")}',
-                    summary_embedding = '{embedding_str}'::vector({dimension})
-                WHERE document_id = '{doc_id}'::uuid;
-                """
+                # Use plain SQL with proper escaping for PostgreSQL
+                op.execute(
+                    f"""
+                    UPDATE {project_name}.document_info
+                    SET
+                        summary = '{doc_data['summary'].replace("'", "''")}',
+                        summary_embedding = '{embedding_str}'::vector({dimension})
+                    WHERE document_id = '{doc_id}'::uuid;
+                    """
+                )
+        else:
+            print(
+                "No document summaries found, skipping update of existing documents"
             )
 
 

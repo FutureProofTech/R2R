@@ -4,26 +4,21 @@ from contextlib import asynccontextmanager
 from typing import Optional
 from uuid import UUID
 
-from core.base.api.models import UserResponse
-from core.base.logger.base import RunType
-from core.base.utils import generate_run_id
+from core.base.api.models import User
+from core.base.utils import generate_id
 
-from .base import PersistentLoggingProvider
-
-run_id_var = contextvars.ContextVar("run_id", default=generate_run_id())
+run_id_var = contextvars.ContextVar("run_id", default=generate_id())
 
 
 class RunManager:
-    def __init__(self, logger: PersistentLoggingProvider):
-        self.logger = logger
+    def __init__(self):
         self.run_info: dict[UUID, dict] = {}
 
-    async def set_run_info(self, run_type: str, run_id: Optional[UUID] = None):
+    async def set_run_info(self, run_id: Optional[UUID] = None):
         run_id = run_id or run_id_var.get()
         if run_id is None:
-            run_id = generate_run_id()
+            run_id = generate_id()
             token = run_id_var.set(run_id)
-            self.run_info[run_id] = {"run_type": run_type}
         else:
             token = run_id_var.set(run_id)
         return run_id, token
@@ -34,20 +29,10 @@ class RunManager:
 
     async def log_run_info(
         self,
-        run_type: RunType,
-        user: UserResponse,
+        user: User,
     ):
         if asyncio.iscoroutine(user):
             user = await user
-
-        if run_id := run_id_var.get():
-            await self.logger.info_log(
-                run_id=run_id,
-                run_type=run_type,
-                user_id=user.id,
-            )
-        else:
-            raise ValueError("No run ID set")
 
     async def clear_run_info(self, token: contextvars.Token):
         run_id = run_id_var.get()
@@ -59,10 +44,9 @@ class RunManager:
 @asynccontextmanager
 async def manage_run(
     run_manager: RunManager,
-    run_type: RunType = RunType.UNSPECIFIED,
     run_id: Optional[UUID] = None,
 ):
-    run_id, token = await run_manager.set_run_info(run_type, run_id)
+    run_id, token = await run_manager.set_run_info(run_id)
     try:
         yield run_id
     finally:

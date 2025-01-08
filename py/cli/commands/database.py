@@ -2,8 +2,6 @@ import sys
 
 import asyncclick as click
 
-from cli.command_group import cli
-
 from ..utils.database_utils import (
     check_database_connection,
     get_database_url_from_env,
@@ -84,7 +82,6 @@ async def upgrade(schema, revision):
         click.echo(
             f"Running database upgrade for schema {schema or 'default'}..."
         )
-        print(f"Upgrading revision = {revision}")
         command = f"upgrade {revision}" if revision else "upgrade"
         result = await run_alembic_command(command, schema_name=schema)
 
@@ -106,11 +103,10 @@ async def upgrade(schema, revision):
 @click.option("--revision", help="Downgrade to a specific revision")
 async def downgrade(schema, revision):
     """Downgrade database schema to the previous revision or a specific revision."""
-    if not revision:
-        if not click.confirm(
-            "No revision specified. This will downgrade the database by one revision. Continue?"
-        ):
-            return
+    if not revision and not click.confirm(
+        "No revision specified. This will downgrade the database by one revision. Continue?"
+    ):
+        return
 
     try:
         db_url = get_database_url_from_env(log=False)

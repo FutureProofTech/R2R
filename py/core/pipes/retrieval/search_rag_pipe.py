@@ -7,13 +7,14 @@ from core.base import (
     AsyncState,
     CompletionProvider,
     DatabaseProvider,
+    KGSearchResultType,
 )
 from core.base.abstractions import GenerationConfig, RAGCompletion
 
 from ..abstractions.generator_pipe import GeneratorPipe
 
 
-class SearchRAGPipe(GeneratorPipe):
+class RAGPipe(GeneratorPipe):
     class Input(AsyncPipe.Input):
         message: AsyncGenerator[Tuple[str, AggregateSearchResult], None]
 
@@ -59,9 +60,8 @@ class SearchRAGPipe(GeneratorPipe):
             )
             context += context_piece
             search_iteration += 1
-
         messages = (
-            await self.database_provider.prompt_handler.get_message_payload(
+            await self.database_provider.prompts_handler.get_message_payload(
                 system_prompt_name=self.config.system_prompt,
                 task_prompt_name=self.config.task_prompt,
                 task_inputs={"query": sel_query, "context": context},
@@ -77,11 +77,6 @@ class SearchRAGPipe(GeneratorPipe):
             content = response.choices[0].message.content
             if not content:
                 raise ValueError("Response content is empty")
-            await self.enqueue_log(
-                run_id=run_id,
-                key="llm_response",
-                value=content,
-            )
 
     async def _collect_context(
         self,
@@ -91,27 +86,35 @@ class SearchRAGPipe(GeneratorPipe):
         total_results: int,
     ) -> Tuple[str, int]:
         context = f"Query:\n{query}\n\n"
-        if results.vector_search_results:
+        if results.chunk_search_results:
             context += f"Vector Search Results({iteration}):\n"
             it = total_results + 1
-            for result in results.vector_search_results:
+            for result in results.chunk_search_results:
                 context += f"[{it}]: {result.text}\n\n"
                 it += 1
             total_results = (
                 it - 1
             )  # Update total_results based on the last index used
-        if results.kg_search_results:
+        if results.graph_search_results:
             context += f"Knowledge Graph ({iteration}):\n"
             it = total_results + 1
-            for search_results in results.kg_search_results:  # [1]:
-                if associated_query := search_results.metadata.get(
-                    "associated_query"
+            for search_result in results.graph_search_results:  # [1]:
+                # if associated_query := search_results.metadata.get(
+                #     "associated_query"
+                # ):
+                #     context += f"Query: {associated_query}\n\n"
+                # context += f"Results:\n"
+                if search_result.result_type == KGSearchResultType.ENTITY:
+                    context += f"[{it}]: Entity Name - {search_result.content.name}\n\nDescription - {search_result.content.description}\n\n"
+                elif (
+                    search_result.result_type
+                    == KGSearchResultType.RELATIONSHIP
                 ):
-                    context += f"Query: {associated_query}\n\n"
-                context += f"Results:\n"
-                for search_result in search_results:
-                    context += f"[{it}]: {search_result}\n\n"
-                    it += 1
+                    context += f"[{it}]: Relationship - {search_result.content.subject} - {search_result.content.predicate} - {search_result.content.object}\n\n"
+                else:
+                    context += f"[{it}]: Community Name - {search_result.content.name}\n\nDescription - {search_result.content.summary}\n\n"
+
+                it += 1
             total_results = (
                 it - 1
             )  # Update total_results based on the last index used

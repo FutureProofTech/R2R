@@ -2,7 +2,7 @@
 
 import json
 from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from pydantic import BaseModel, Field
@@ -51,12 +51,12 @@ class GenerationConfig(R2RSerializable):
         default_factory=lambda: GenerationConfig._defaults["temperature"]
     )
     top_p: float = Field(
-        default_factory=lambda: GenerationConfig._defaults["top_p"]
+        default_factory=lambda: GenerationConfig._defaults["top_p"],
     )
     max_tokens_to_sample: int = Field(
         default_factory=lambda: GenerationConfig._defaults[
             "max_tokens_to_sample"
-        ]
+        ],
     )
     stream: bool = Field(
         default_factory=lambda: GenerationConfig._defaults["stream"]
@@ -70,12 +70,12 @@ class GenerationConfig(R2RSerializable):
     add_generation_kwargs: Optional[dict] = Field(
         default_factory=lambda: GenerationConfig._defaults[
             "add_generation_kwargs"
-        ]
+        ],
     )
     api_base: Optional[str] = Field(
-        default_factory=lambda: GenerationConfig._defaults["api_base"]
+        default_factory=lambda: GenerationConfig._defaults["api_base"],
     )
-    response_format: Optional[Union[dict, BaseModel]] = None
+    response_format: Optional[dict | BaseModel] = None
 
     @classmethod
     def set_default(cls, **kwargs):
@@ -112,6 +112,7 @@ class GenerationConfig(R2RSerializable):
         return json.dumps(self.to_dict())
 
     class Config:
+        populate_by_name = True
         json_schema_extra = {
             "model": "openai/gpt-4o",
             "temperature": 0.1,
@@ -137,13 +138,14 @@ class MessageType(Enum):
 
 
 class Message(R2RSerializable):
-    role: Union[MessageType, str]
+    role: MessageType | str
     content: Optional[str] = None
     name: Optional[str] = None
     function_call: Optional[dict[str, Any]] = None
     tool_calls: Optional[list[dict[str, Any]]] = None
 
     class Config:
+        populate_by_name = True
         json_schema_extra = {
             "role": "user",
             "content": "This is a test message.",

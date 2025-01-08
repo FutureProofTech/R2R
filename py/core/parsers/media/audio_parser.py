@@ -1,4 +1,3 @@
-import base64
 import logging
 import os
 import tempfile
@@ -44,8 +43,6 @@ class AudioParser(AsyncParser[bytes]):
 
         Args:
             data: Raw audio bytes
-            chunk_size: Size of text chunks to yield
-            model: The model to use for transcription (default is whisper-1)
             *args, **kwargs: Additional arguments passed to the transcription call
 
         Yields:
